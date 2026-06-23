@@ -1,0 +1,30 @@
+# IndQA — full stack via Docker Compose.
+#
+# The database stays on MongoDB Atlas (Atlas Vector Search is required for the
+# RAG retrieval step and is not available in a local mongod), so set MONGODB_URI
+# in server/.env to your Atlas connection string before running.
+#
+#   docker compose up --build
+#   → frontend at http://localhost:8080 (nginx proxies /api + /socket.io to the server)
+
+services:
+  server:
+    build: ./server
+    env_file: ./server/.env
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - CLIENT_URL=http://localhost:8080
+    expose:
+      - '4000'
+    ports:
+      - '4000:4000'
+    restart: unless-stopped
+
+  client:
+    build: ./client
+    ports:
+      - '8080:80'
+    depends_on:
+      - server
+    restart: unless-stopped

@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment files (NEVER commit real secrets)
+.env
+**/.env
+.env.local
+**/.env.local
+.env.*.local
+# Keep example/templates tracked
+!.env.example
+!**/.env.example
+
+# Logs
+*.log
+**/*.log
+logs/
+**/logs/
+npm-debug.log*
+
+# Build output
+client/dist/
+dist/
+build/
+
+# Coverage / test output
+coverage/
+**/coverage/
+.nyc_output/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Misc
+.cache/
+.vite/

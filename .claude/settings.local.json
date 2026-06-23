@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd \"c:\\\\Users\\\\FINRISE\\\\Downloads\\\\indqa\"; Remove-Item -LiteralPath \"./{client\" -Recurse -Force; \"removed junk dir: $\\(-not \\(Test-Path -LiteralPath './{client'\\)\\)\"; cd server; node --check app.js; if \\($?\\) { \"app.js SYNTAX OK\" }; node -e \"import\\('./app.js'\\).catch\\(e=>{ if\\(/MONGODB|ECONNREFUSED|querySrv|ENOTFOUND|getaddrinfo/i.test\\(e.message\\)\\) {console.log\\('imports OK \\(stopped at DB connect, expected\\)'\\)} else {console.log\\('ERR:',e.message\\)} }\\)\")",
+      "PowerShell(node seed.js)",
+      "PowerShell(node \"c:\\\\Users\\\\FINRISE\\\\Downloads\\\\indqa\\\\server\\\\seed.js\")"
+    ]
+  }
+}

@@ -7,6 +7,7 @@ const retrievedChunkSchema = new mongoose.Schema({
 }, { _id: false });
 
 const messageSchema = new mongoose.Schema({
+  workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true, index: true },
   conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', required: true, index: true },
   role: { type: String, enum: ['user', 'assistant'], required: true },
   language: { type: String, required: true },

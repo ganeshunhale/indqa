@@ -36,6 +36,38 @@ export const askQuestionSchema = z.object({
   question: z.string().trim().min(1, 'cannot be empty').max(2000, 'is too long'),
   language: languageEnum.optional(),
   conversationId: objectId,
+  mode: z.enum(['strict', 'hybrid']).optional(),
+});
+
+export const createWorkspaceSchema = z.object({
+  name: z.string().trim().min(2, 'must be at least 2 characters').max(100),
+});
+
+export const updateWorkspaceSchema = z
+  .object({
+    name: z.string().trim().min(2).max(100).optional(),
+    answerMode: z.enum(['strict', 'hybrid']).optional(),
+  })
+  .refine((d) => d.name !== undefined || d.answerMode !== undefined, {
+    message: 'nothing to update',
+  });
+
+export const inviteSchema = z.object({
+  email: z.string().trim().toLowerCase().email('must be a valid email'),
+  role: z.enum(['admin', 'member']).optional(),
+});
+
+export const memberRoleSchema = z.object({
+  role: z.enum(['owner', 'admin', 'member']),
+});
+
+export const workspaceIdParamSchema = z.object({
+  id: objectId,
+});
+
+export const memberParamsSchema = z.object({
+  id: objectId,
+  userId: objectId,
 });
 
 export const KNOWLEDGE_CATEGORIES = ['government', 'education', 'health', 'agriculture', 'general'];

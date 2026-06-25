@@ -13,12 +13,16 @@ import authRoutes from './routes/auth.js';
 import conversationRoutes from './routes/conversations.js';
 import adminRoutes from './routes/admin.js';
 import analyticsRoutes from './routes/analytics.js';
+import workspaceRoutes from './routes/workspaces.js';
 import { handleQuestion } from './services/qaHandler.js';
 import { verifyToken } from './middleware/auth.js';
+import { resolveWorkspace } from './middleware/resolveWorkspace.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 import { validatePayload } from './middleware/validate.js';
 import { askQuestionSchema } from './validators/schemas.js';
 import Conversation from './models/Conversation.js';
+import Membership from './models/Membership.js';
+import { defaultWorkspaceId } from './services/workspaceService.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -45,23 +49,39 @@ app.use('/api/', apiLimiter);
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-// REST routes
+// REST routes. resolveWorkspace runs after verifyToken to scope each request to
+// the active workspace (via the X-Workspace-Id header, with a sensible default).
 app.use('/api/auth', authRoutes);
-app.use('/api/conversations', verifyToken, conversationRoutes);
-app.use('/api/admin', verifyToken, adminRoutes);
-app.use('/api/analytics', verifyToken, analyticsRoutes);
+app.use('/api/workspaces', verifyToken, workspaceRoutes);
+app.use('/api/conversations', verifyToken, resolveWorkspace, conversationRoutes);
+app.use('/api/admin', verifyToken, resolveWorkspace, adminRoutes);
+app.use('/api/analytics', verifyToken, resolveWorkspace, analyticsRoutes);
 
 // 404 + central error handler — must be registered after all routes.
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Socket.IO JWT authentication
-io.use((socket, next) => {
+// Socket.IO JWT authentication + workspace resolution. The client passes the
+// active workspaceId in the handshake; the user must be a member of it. Falls
+// back to the user's default workspace when none is supplied.
+io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) return next(new Error('Authentication required'));
   try {
     const decoded = jwt.verify(token, config.jwtSecret);
     socket.userId = decoded.userId;
+
+    const requestedWorkspaceId = socket.handshake.auth?.workspaceId;
+    let membership;
+    if (requestedWorkspaceId) {
+      membership = await Membership.findOne({ workspaceId: requestedWorkspaceId, userId: socket.userId });
+      if (!membership) return next(new Error('Not a member of this workspace'));
+    } else {
+      const fallbackId = await defaultWorkspaceId(socket.userId);
+      if (!fallbackId) return next(new Error('No workspace available'));
+      membership = await Membership.findOne({ workspaceId: fallbackId, userId: socket.userId });
+    }
+    socket.workspaceId = membership.workspaceId;
     next();
   } catch {
     next(new Error('Invalid token'));
@@ -78,10 +98,15 @@ io.on('connection', (socket) => {
   socket.on('ask-question', async (payload) => {
     const startTime = Date.now();
     try {
-      const { question, language, conversationId } = validatePayload(askQuestionSchema, payload);
+      const { question, language, conversationId, mode } = validatePayload(askQuestionSchema, payload);
 
-      // Ownership check: only allow asking within the user's own conversation.
-      const conv = await Conversation.findOne({ _id: conversationId, userId: socket.userId });
+      // Ownership check: only allow asking within the user's own conversation,
+      // and only inside the workspace this socket is scoped to.
+      const conv = await Conversation.findOne({
+        _id: conversationId,
+        userId: socket.userId,
+        workspaceId: socket.workspaceId,
+      });
       if (!conv) {
         socket.emit('error', { message: 'Conversation not found.', code: 'NOT_FOUND' });
         return;
@@ -95,6 +120,8 @@ io.on('connection', (socket) => {
         language,
         conversationId,
         userId: socket.userId,
+        workspaceId: socket.workspaceId,
+        requestedMode: mode,
         onToken: (delta) => {
           partial += delta;
           socket.emit('token', { text: delta, partial });

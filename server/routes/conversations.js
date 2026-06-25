@@ -11,7 +11,9 @@ const router = express.Router();
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const conversations = await Conversation.find({ userId: req.userId }).sort({ updatedAt: -1 }).limit(50);
+    const conversations = await Conversation.find({ workspaceId: req.workspaceId, userId: req.userId })
+      .sort({ updatedAt: -1 })
+      .limit(50);
     res.json({ conversations });
   })
 );
@@ -23,6 +25,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const { title, language } = req.body;
     const conversation = await Conversation.create({
+      workspaceId: req.workspaceId,
       userId: req.userId,
       title: title || 'New Conversation',
       language: language || 'hi',
@@ -36,10 +39,16 @@ router.get(
   '/:id/messages',
   validate(idParamSchema, 'params'),
   asyncHandler(async (req, res) => {
-    const conversation = await Conversation.findOne({ _id: req.params.id, userId: req.userId });
+    const conversation = await Conversation.findOne({
+      _id: req.params.id,
+      userId: req.userId,
+      workspaceId: req.workspaceId,
+    });
     if (!conversation) throw new AppError('Conversation not found.', 404);
 
-    const messages = await Message.find({ conversationId: req.params.id }).sort({ createdAt: 1 }).limit(200);
+    const messages = await Message.find({ conversationId: req.params.id, workspaceId: req.workspaceId })
+      .sort({ createdAt: 1 })
+      .limit(200);
     res.json({ messages });
   })
 );
@@ -49,10 +58,14 @@ router.delete(
   '/:id',
   validate(idParamSchema, 'params'),
   asyncHandler(async (req, res) => {
-    const conversation = await Conversation.findOneAndDelete({ _id: req.params.id, userId: req.userId });
+    const conversation = await Conversation.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.userId,
+      workspaceId: req.workspaceId,
+    });
     if (!conversation) throw new AppError('Conversation not found.', 404);
 
-    await Message.deleteMany({ conversationId: req.params.id });
+    await Message.deleteMany({ conversationId: req.params.id, workspaceId: req.workspaceId });
     res.json({ message: 'Conversation deleted.' });
   })
 );

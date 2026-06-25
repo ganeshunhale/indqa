@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { io } from 'socket.io-client';
 import { LANGUAGES } from './LoginPage';
+import WorkspaceSwitcher from '../components/WorkspaceSwitcher';
 import {
   MessageCircle, Plus, Send, Globe, LogOut, Trash2, Menu, X,
   ChevronDown, ChevronUp, Clock, Shield, Sparkles, WifiOff, Moon, Sun, Settings, BarChart3,
@@ -12,7 +13,7 @@ import {
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '/';
 
 export default function ChatPage() {
-  const { user, logout, api } = useAuth();
+  const { user, logout, api, activeWorkspace, activeWorkspaceId } = useAuth();
   const { t, i18n } = useTranslation();
 
   const [conversations, setConversations] = useState([]);
@@ -26,10 +27,18 @@ export default function ChatPage() {
   const [statusMsg, setStatusMsg] = useState('');
   const [connState, setConnState] = useState('connecting'); // connecting | connected | reconnecting | disconnected
   const [theme, setTheme] = useState(() => localStorage.getItem('indqa_theme') || 'dark');
+  // Per-session answer mode (Strict | Hybrid). Seeded from the workspace default;
+  // the user can override it for this session via the header toggle.
+  const [chatMode, setChatMode] = useState('hybrid');
 
   const socketRef = useRef(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Seed the session answer mode from the active workspace's default.
+  useEffect(() => {
+    if (activeWorkspace?.answerMode) setChatMode(activeWorkspace.answerMode);
+  }, [activeWorkspaceId, activeWorkspace?.answerMode]);
 
   // Sync UI language with the selected answer language.
   useEffect(() => { i18n.changeLanguage(language); }, [language, i18n]);
@@ -45,10 +54,15 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamText]);
 
-  // Socket.IO connection + event wiring.
+  // Socket.IO connection + event wiring. Re-established when the active
+  // workspace changes so the connection (and its retrieval) is scoped correctly.
   useEffect(() => {
+    if (!activeWorkspaceId) return undefined;
     const token = localStorage.getItem('indqa_token');
-    const socket = io(SOCKET_URL, { auth: { token }, transports: ['websocket', 'polling'] });
+    const socket = io(SOCKET_URL, {
+      auth: { token, workspaceId: activeWorkspaceId },
+      transports: ['websocket', 'polling'],
+    });
 
     socket.on('connect', () => setConnState('connected'));
     socket.on('disconnect', () => setConnState('disconnected'));
@@ -98,12 +112,16 @@ export default function ChatPage() {
     socketRef.current = socket;
     return () => socket.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeWorkspaceId]);
 
-  // Load the conversation list.
+  // Load the conversation list for the active workspace. Switching workspaces
+  // clears the current conversation and reloads the list.
   useEffect(() => {
-    api.get('/conversations').then((res) => setConversations(res.data.conversations)).catch(() => {});
-  }, [api]);
+    if (!activeWorkspaceId) return;
+    setActiveConv(null);
+    setMessages([]);
+    api.get('/conversations').then((res) => setConversations(res.data.conversations)).catch(() => setConversations([]));
+  }, [api, activeWorkspaceId]);
 
   // Load messages when the active conversation changes.
   useEffect(() => {
@@ -156,7 +174,7 @@ export default function ChatPage() {
     setInput('');
     setIsProcessing(true);
 
-    socketRef.current?.emit('ask-question', { question: text, language, conversationId: conv._id });
+    socketRef.current?.emit('ask-question', { question: text, language, conversationId: conv._id, mode: chatMode });
   };
 
   const handleKeyDown = (e) => {
@@ -183,6 +201,8 @@ export default function ChatPage() {
             <X size={20} />
           </button>
         </div>
+
+        <WorkspaceSwitcher />
 
         <button className="btn-new-chat" onClick={createConversation}>
           <Plus size={18} /> {t('newChat')}
@@ -212,7 +232,7 @@ export default function ChatPage() {
           ))}
         </div>
 
-        {user?.role === 'admin' && (
+        {(activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin') && (
           <nav className="sidebar-admin-nav">
             <Link to="/admin" className="admin-nav-item"><Settings size={16} /> {t('admin')}</Link>
             <Link to="/analytics" className="admin-nav-item"><BarChart3 size={16} /> {t('analytics')}</Link>
@@ -252,6 +272,27 @@ export default function ChatPage() {
                 <option key={l.code} value={l.code}>{l.native} ({l.name})</option>
               ))}
             </select>
+          </div>
+
+          <div className="mode-toggle" role="group" aria-label={t('answerMode')}>
+            <button
+              type="button"
+              className={`mode-btn ${chatMode === 'hybrid' ? 'active' : ''}`}
+              onClick={() => setChatMode('hybrid')}
+              title={t('modeHybridDesc')}
+              aria-pressed={chatMode === 'hybrid'}
+            >
+              <Sparkles size={13} /> {t('modeHybrid')}
+            </button>
+            <button
+              type="button"
+              className={`mode-btn ${chatMode === 'strict' ? 'active' : ''}`}
+              onClick={() => setChatMode('strict')}
+              title={t('modeStrictDesc')}
+              aria-pressed={chatMode === 'strict'}
+            >
+              <Shield size={13} /> {t('modeStrict')}
+            </button>
           </div>
 
           <ConnectionStatus state={connState} t={t} />

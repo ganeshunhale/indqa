@@ -1,20 +1,21 @@
 import express from 'express';
 import Message from '../models/Message.js';
 import Conversation from '../models/Conversation.js';
-import User from '../models/User.js';
 import KnowledgeChunk from '../models/KnowledgeChunk.js';
 import config from '../config/index.js';
-import { requireAdmin } from '../middleware/requireAdmin.js';
+import Membership from '../models/Membership.js';
+import { requireWorkspaceAdmin } from '../middleware/requireWorkspaceAdmin.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
 const router = express.Router();
-router.use(requireAdmin);
+router.use(requireWorkspaceAdmin);
 
 // GET /api/analytics — aggregate usage metrics for the admin dashboard.
 router.get(
   '/',
   asyncHandler(async (req, res) => {
     const threshold = config.rag.confidenceThreshold;
+    const workspaceId = req.workspaceId;
 
     const [
       totalUsers,
@@ -26,19 +27,20 @@ router.get(
       groundedCount,
       messagesPerDay,
     ] = await Promise.all([
-      User.countDocuments(),
-      Conversation.countDocuments(),
-      Message.countDocuments(),
-      KnowledgeChunk.countDocuments(),
+      // "Users" here = members of this workspace.
+      Membership.countDocuments({ workspaceId }),
+      Conversation.countDocuments({ workspaceId }),
+      Message.countDocuments({ workspaceId }),
+      KnowledgeChunk.countDocuments({ workspaceId }),
       // Questions grouped by language
       Message.aggregate([
-        { $match: { role: 'user' } },
+        { $match: { workspaceId, role: 'user' } },
         { $group: { _id: '$language', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),
       // Average latency + confidence over assistant messages
       Message.aggregate([
-        { $match: { role: 'assistant' } },
+        { $match: { workspaceId, role: 'assistant' } },
         {
           $group: {
             _id: null,
@@ -49,9 +51,10 @@ router.get(
         },
       ]),
       // RAG-grounded answers = confidence at/above the threshold
-      Message.countDocuments({ role: 'assistant', confidence: { $gte: threshold } }),
+      Message.countDocuments({ workspaceId, role: 'assistant', confidence: { $gte: threshold } }),
       // Activity over the last 7 days
       Message.aggregate([
+        { $match: { workspaceId } },
         { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
         { $sort: { _id: -1 } },
         { $limit: 7 },

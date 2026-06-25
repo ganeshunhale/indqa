@@ -56,8 +56,13 @@ const config = {
     vectorIndexName: process.env.VECTOR_INDEX_NAME || 'embedding_index',
     topK: Number(process.env.RAG_TOP_K) || 5,
     numCandidates: Number(process.env.RAG_NUM_CANDIDATES) || 50,
-    // Minimum vector-search score for an answer to be considered "grounded".
-    confidenceThreshold: Number(process.env.RAG_CONFIDENCE_THRESHOLD) || 0.7,
+    // Floor below which a retrieved passage is treated as noise and ignored.
+    // Above it, passages are fed to the (anti-hallucination) RAG prompt — so an
+    // uploaded document is actually used to answer instead of being discarded.
+    minRetrievalScore: Number(process.env.RAG_MIN_RETRIEVAL_SCORE) || 0.3,
+    // Score at/above which an answer is labelled "grounded" in analytics.
+    // (No longer gates whether passages are used — see minRetrievalScore.)
+    confidenceThreshold: Number(process.env.RAG_CONFIDENCE_THRESHOLD) || 0.5,
     // Recent messages (prior turns) fed back as conversation context so that
     // follow-ups like "who is he?" resolve. 6 ≈ 3 turns. Set to 0 to disable.
     // (Parsed so an explicit 0 is honored rather than falling back to the default.)

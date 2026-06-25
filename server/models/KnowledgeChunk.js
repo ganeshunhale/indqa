@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 const knowledgeChunkSchema = new mongoose.Schema({
+  workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true, index: true },
   text: { type: String, required: true },
   textEnglish: { type: String, required: true },
   source: { type: String, required: true },
@@ -14,8 +15,15 @@ const knowledgeChunkSchema = new mongoose.Schema({
   }
 });
 
-// Note: Atlas Vector Search index must be created via Atlas UI/CLI:
-// Index name: "embedding_index"
-// Field: embedding, type: knnVector, dimensions: 768, similarity: cosine
+// Note: Atlas Vector Search index must be created via Atlas UI/CLI.
+// For per-workspace isolation the index MUST declare workspaceId as a filter
+// field so $vectorSearch can pre-filter by tenant:
+//   {
+//     "fields": [
+//       { "type": "vector", "path": "embedding", "numDimensions": 768, "similarity": "cosine" },
+//       { "type": "filter", "path": "workspaceId" }
+//     ]
+//   }
+// Index name: "embedding_index" (config.rag.vectorIndexName)
 
 export default mongoose.model('KnowledgeChunk', knowledgeChunkSchema);

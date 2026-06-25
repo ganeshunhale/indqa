@@ -10,8 +10,33 @@ import mongoose from 'mongoose';
 import config from './config/index.js';
 import { generateEmbedding } from './services/gemini.js';
 import KnowledgeChunk from './models/KnowledgeChunk.js';
+import Workspace from './models/Workspace.js';
+import Membership from './models/Membership.js';
+import User from './models/User.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Resolve which workspace to seed into. Prefers the migration's "Default
+ * Workspace", then any existing workspace, then creates one owned by the first
+ * registered user. Returns null (with guidance) if there are no users yet.
+ */
+async function resolveSeedWorkspace() {
+  let workspace =
+    (await Workspace.findOne({ slug: 'default-workspace' })) || (await Workspace.findOne().sort({ createdAt: 1 }));
+  if (workspace) return workspace;
+
+  const owner = await User.findOne().sort({ createdAt: 1 });
+  if (!owner) return null;
+
+  workspace = await Workspace.create({ name: 'Default Workspace', slug: 'default-workspace', ownerId: owner._id });
+  await Membership.updateOne(
+    { workspaceId: workspace._id, userId: owner._id },
+    { $setOnInsert: { workspaceId: workspace._id, userId: owner._id, role: 'owner' } },
+    { upsert: true }
+  );
+  return workspace;
+}
 
 // Sample knowledge base entries (government programs, education, health, agriculture, general).
 const sampleKnowledge = [
@@ -56,8 +81,19 @@ async function seed() {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB Atlas');
 
+    const workspace = await resolveSeedWorkspace();
+    if (!workspace) {
+      console.error(
+        '\nNo workspace found and no users exist yet.\n' +
+          '  Register a user first (the app auto-creates their workspace), then re-run: npm run seed\n'
+      );
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+    console.log(`Seeding into workspace "${workspace.name}" (${workspace._id})`);
+
     for (const item of sampleKnowledge) {
-      const existing = await KnowledgeChunk.findOne({ text: item.text });
+      const existing = await KnowledgeChunk.findOne({ text: item.text, workspaceId: workspace._id });
       if (existing?.embedding?.length) {
         skipped++;
         continue;
@@ -67,9 +103,10 @@ async function seed() {
       const embedding = await generateEmbedding(item.text);
 
       await KnowledgeChunk.updateOne(
-        { text: item.text },
+        { text: item.text, workspaceId: workspace._id },
         {
           $set: {
+            workspaceId: workspace._id,
             textEnglish: item.text,
             source: item.source,
             category: item.category,

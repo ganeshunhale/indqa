@@ -3,7 +3,7 @@ import multer from 'multer';
 import KnowledgeChunk from '../models/KnowledgeChunk.js';
 import { generateEmbedding } from '../services/gemini.js';
 import { extractText, chunkText } from '../services/documentProcessor.js';
-import { requireAdmin } from '../middleware/requireAdmin.js';
+import { requireWorkspaceAdmin } from '../middleware/requireWorkspaceAdmin.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { knowledgeChunkSchema, idParamSchema, KNOWLEDGE_CATEGORIES } from '../validators/schemas.js';
@@ -11,15 +11,17 @@ import logger from '../utils/logger.js';
 
 const router = express.Router();
 
-// Every admin route requires an authenticated admin (verifyToken runs in app.js).
-router.use(requireAdmin);
+// Knowledge-base management requires owner/admin of the ACTIVE workspace.
+// verifyToken + resolveWorkspace run in app.js before this router.
+router.use(requireWorkspaceAdmin);
 
 const MAX_CHUNKS_PER_UPLOAD = 50;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-const insertChunk = (text, source, category) =>
+const insertChunk = (workspaceId, text, source, category) =>
   generateEmbedding(text).then((embedding) =>
     KnowledgeChunk.create({
+      workspaceId,
       text,
       textEnglish: text,
       source,
@@ -37,8 +39,11 @@ router.get(
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const skip = Number(req.query.skip) || 0;
     const [items, total] = await Promise.all([
-      KnowledgeChunk.find({}, { embedding: 0 }).sort({ 'metadata.dateAdded': -1 }).skip(skip).limit(limit),
-      KnowledgeChunk.countDocuments(),
+      KnowledgeChunk.find({ workspaceId: req.workspaceId }, { embedding: 0 })
+        .sort({ 'metadata.dateAdded': -1 })
+        .skip(skip)
+        .limit(limit),
+      KnowledgeChunk.countDocuments({ workspaceId: req.workspaceId }),
     ]);
     res.json({ items, total });
   })
@@ -50,8 +55,8 @@ router.post(
   validate(knowledgeChunkSchema),
   asyncHandler(async (req, res) => {
     const { text, source, category } = req.body;
-    const chunk = await insertChunk(text, source || 'Admin entry', category || 'general');
-    logger.info(`Admin ${req.userId} added a knowledge chunk (${chunk._id})`);
+    const chunk = await insertChunk(req.workspaceId, text, source || 'Admin entry', category || 'general');
+    logger.info(`Admin ${req.userId} added a knowledge chunk (${chunk._id}) to workspace ${req.workspaceId}`);
     res.status(201).json({ chunk: { ...chunk.toObject(), embedding: undefined } });
   })
 );
@@ -61,7 +66,7 @@ router.delete(
   '/knowledge/:id',
   validate(idParamSchema, 'params'),
   asyncHandler(async (req, res) => {
-    const deleted = await KnowledgeChunk.findByIdAndDelete(req.params.id);
+    const deleted = await KnowledgeChunk.findOneAndDelete({ _id: req.params.id, workspaceId: req.workspaceId });
     if (!deleted) throw new AppError('Knowledge chunk not found.', 404);
     res.json({ message: 'Deleted.' });
   })
@@ -93,11 +98,11 @@ router.post(
     // Embed sequentially to stay within Gemini free-tier rate limits.
     let added = 0;
     for (const chunk of chunks) {
-      await insertChunk(chunk, source, category);
+      await insertChunk(req.workspaceId, chunk, source, category);
       added++;
     }
 
-    logger.info(`Admin ${req.userId} ingested "${source}" → ${added} chunks`);
+    logger.info(`Admin ${req.userId} ingested "${source}" → ${added} chunks (workspace ${req.workspaceId})`);
     res.status(201).json({ added, source, category, truncated });
   })
 );

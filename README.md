@@ -7,7 +7,8 @@ A full-stack **MERN** application that answers questions in **9 major Indian lan
 ## Features
 
 - 🌐 **9 Indian languages** + English, with a fully localised UI (react-i18next)
-- 🔎 **RAG pipeline** — semantic retrieval over a knowledge base via Atlas Vector Search, grounded answers with source citations and confidence scores
+- 🏢 **Multi-tenant workspaces** — each workspace has an isolated knowledge base, conversations, and analytics; users belong to many workspaces with per-workspace roles (owner / admin / member) and email invites
+- 🔎 **RAG pipeline** — semantic retrieval over a knowledge base via Atlas Vector Search (filtered per workspace), grounded answers with source citations and confidence scores
 - ⚡ **Real-time streaming** answers over Socket.IO (Gemini token streaming)
 - 🔐 **JWT authentication** with bcrypt password hashing and request validation (Zod)
 - 🛡️ **Resilient Gemini calls** — timeout + exponential-backoff retry, graceful handling of free-tier quota (429) errors
@@ -58,16 +59,26 @@ In the Atlas UI: cluster → Browse Collections → `indqa.knowledgechunks` → 
 ```json
 {
   "type": "vectorSearch",
-  "fields": [{ "type": "vector", "path": "embedding", "numDimensions": 768, "similarity": "cosine" }]
+  "fields": [
+    { "type": "vector", "path": "embedding", "numDimensions": 768, "similarity": "cosine" },
+    { "type": "filter", "path": "workspaceId" }
+  ]
 }
 ```
-Name it `embedding_index`.
+Name it `embedding_index`. The `workspaceId` **filter** field is required for multi-tenant isolation — retrieval pre-filters chunks to the active workspace.
 
-### 4. Seed the knowledge base
+### 4. (Upgrading an existing single-tenant deployment) Run the workspace migration
+If you already have data from a pre-workspaces version, backfill it into a default workspace:
+```bash
+cd server && node scripts/migrate-workspaces.js
+```
+Idempotent. Creates a "Default Workspace", makes existing users members (first admin = owner), and stamps existing chunks/conversations/messages with its `workspaceId`. Fresh installs can skip this — every new user automatically gets a personal workspace at registration.
+
+### 5. Seed the knowledge base
 ```bash
 npm run seed
 ```
-(Idempotent — safe to re-run; already-embedded passages are skipped.)
+Seeds sample passages into your default/first workspace. (Idempotent — safe to re-run; already-embedded passages are skipped.) Register a user first so a workspace exists to seed into.
 
 ### 5. Run both apps (one command)
 ```bash

@@ -104,49 +104,57 @@ function formatHistory(history) {
   return `Conversation so far (use it to resolve references like "he"/"it"/"that"):\n${lines}\n\n`;
 }
 
-function buildRagPrompt(question, passages, history) {
-  const contextText = passages
+function renderContext(passages) {
+  return passages
     .map((p, i) => `[Source ${i + 1}: ${p.source || 'Knowledge Base'}]\n${p.textEnglish || p.text}`)
     .join('\n\n');
+}
 
-  return `You are IndQA, a multilingual question-answering assistant for Indian users.
+// STRICT mode: answer only from the knowledge base; refuse when it isn't covered.
+function buildStrictPrompt(question, passages, history) {
+  const contextText = renderContext(passages);
+  return `You are IndQA, a helpful multilingual assistant for Indian users. The context passages below are your ONLY source of truth.
 
 RULES:
-- ONLY answer based on the provided context passages below.
-- Use the conversation so far ONLY to understand what the question refers to; base all facts on the context passages.
-- If the context does not contain enough information, say "I don't have enough information to answer this question accurately."
-- Do NOT make up information or use knowledge outside the provided context.
-- Keep answers concise, factual, and helpful (2-4 sentences).
-- At the end, cite which source(s) you used, e.g., [Source 1].
+- Answer strictly from the context passages. Treat them as ground truth.
+- You MAY reason over the context to give analysis or recommendations (e.g. skills -> suitable roles, scheme rules -> who qualifies), but every fact must come from the context.
+- Do NOT use outside knowledge and do NOT invent facts (no made-up skills, dates, numbers, or details).
+- Use the conversation so far only to understand what the question refers to.
+- If the context is unrelated to the question or lacks what is needed, reply exactly: "I don't have enough information to answer this question accurately."
+- Be concise and helpful. Cite the source(s) you used, e.g., [Source 1].
 
 ${formatHistory(history)}Context Passages:
-${contextText}
+${contextText || '(none)'}
 
 Question: ${question}
 
-Provide a concise, factual answer based ONLY on the context above.`;
+Answer using ONLY the context above.`;
 }
 
-function buildDirectPrompt(question, history) {
-  return `You are IndQA, a helpful multilingual QA assistant for Indian users. Answer the following question concisely and factually in 2-4 sentences. If you are unsure, say so.
+// HYBRID mode: general assistant; use the KB as reference when relevant, otherwise general knowledge.
+function buildHybridPrompt(question, passages, history) {
+  const contextBlock = passages.length
+    ? `Reference material (use it only if relevant to the question):\n${renderContext(passages)}\n\n`
+    : '';
+  return `You are IndQA, a helpful, knowledgeable multilingual assistant for Indian users. Answer any question to the best of your ability.
 
-${formatHistory(history)}Question: ${question}`;
+HOW TO USE THE REFERENCE MATERIAL:
+- If reference material is provided below and is relevant, base your answer on it and cite the sources you use, e.g., [Source 1].
+- If it is not relevant (or none is provided), answer from your own general knowledge and do NOT cite any source.
+- Never refuse to answer just because the reference material doesn't cover the topic.
+- Do not attribute invented facts to the reference material; if you're unsure, say so.
+- Use the conversation so far to resolve references like "he"/"it"/"that".
+- Be concise and helpful: a short paragraph, or a few bullet points when listing options.
+
+${formatHistory(history)}${contextBlock}Question: ${question}
+
+Answer helpfully.`;
 }
 
-/** RAG answer grounded in retrieved passages (non-streaming). */
-export async function generateRAGAnswer(question, passages, history = []) {
-  return callWithResilience('RAG generation', async () => {
-    const result = await chatModel.generateContent(buildRagPrompt(question, passages, history));
-    return result.response.text().trim();
-  });
-}
-
-/** Direct answer when no relevant passages are found (non-streaming). */
-export async function generateDirectAnswer(question, history = []) {
-  return callWithResilience('Direct generation', async () => {
-    const result = await chatModel.generateContent(buildDirectPrompt(question, history));
-    return result.response.text().trim();
-  });
+function buildPrompt(mode, question, passages, history) {
+  return mode === 'strict'
+    ? buildStrictPrompt(question, passages, history)
+    : buildHybridPrompt(question, passages, history);
 }
 
 /**
@@ -167,10 +175,11 @@ async function generateStream(label, prompt, onChunk) {
   return full.trim();
 }
 
-export function generateRAGAnswerStream(question, passages, onChunk, history = []) {
-  return generateStream('RAG generation (stream)', buildRagPrompt(question, passages, history), onChunk);
-}
-
-export function generateDirectAnswerStream(question, onChunk, history = []) {
-  return generateStream('Direct generation (stream)', buildDirectPrompt(question, history), onChunk);
+/**
+ * Generate an answer (streamed) in the given mode.
+ *   'hybrid' (default) — general assistant that uses the KB as reference when relevant
+ *   'strict'           — knowledge-base only; refuses when the KB doesn't cover it
+ */
+export function generateAnswerStream(question, passages, onChunk, history = [], mode = 'hybrid') {
+  return generateStream(`Answer (${mode})`, buildPrompt(mode, question, passages, history), onChunk);
 }

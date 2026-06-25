@@ -6,10 +6,23 @@ import { verifyToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { registerSchema, loginSchema } from '../validators/schemas.js';
+import {
+  createWorkspaceForOwner,
+  claimInvites,
+  getUserWorkspaces,
+  defaultWorkspaceId,
+} from '../services/workspaceService.js';
 
 const router = express.Router();
 
 const signToken = (userId) => jwt.sign({ userId }, config.jwtSecret, { expiresIn: config.jwtExpiresIn });
+
+// Workspaces + the suggested active workspace, attached to auth responses so the
+// client can populate its workspace switcher in a single round-trip.
+const workspaceContext = async (userId) => ({
+  workspaces: await getUserWorkspaces(userId),
+  activeWorkspaceId: await defaultWorkspaceId(userId),
+});
 
 const publicUser = (user) => ({
   id: user._id,
@@ -32,7 +45,17 @@ router.post(
     }
 
     const user = await User.create({ name, email, password, preferredLanguage: preferredLanguage || 'hi' });
-    res.status(201).json({ token: signToken(user._id), user: publicUser(user) });
+
+    // Every new user gets a personal workspace they own, plus any workspaces
+    // they were invited to before signing up.
+    await createWorkspaceForOwner({ name: `${user.name}'s Workspace`, ownerId: user._id });
+    await claimInvites({ userId: user._id, email: user.email });
+
+    res.status(201).json({
+      token: signToken(user._id),
+      user: publicUser(user),
+      ...(await workspaceContext(user._id)),
+    });
   })
 );
 
@@ -48,7 +71,10 @@ router.post(
       throw new AppError('Invalid email or password.', 401, { code: 'INVALID_CREDENTIALS' });
     }
 
-    res.json({ token: signToken(user._id), user: publicUser(user) });
+    // Claim any invitations that arrived since the user last signed in.
+    await claimInvites({ userId: user._id, email: user.email });
+
+    res.json({ token: signToken(user._id), user: publicUser(user), ...(await workspaceContext(user._id)) });
   })
 );
 
@@ -59,7 +85,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const user = await User.findById(req.userId).select('-password');
     if (!user) throw new AppError('User not found.', 404);
-    res.json({ user });
+    res.json({ user, ...(await workspaceContext(req.userId)) });
   })
 );
 

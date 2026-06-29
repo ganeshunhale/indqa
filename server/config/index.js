@@ -36,7 +36,12 @@ validateEnv();
 const config = {
   // Server
   port: Number(process.env.PORT) || 4000,
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  // Comma-separated list of allowed frontend origins (CORS + Socket.IO).
+  // Trailing slashes are stripped because the browser's Origin header never has one.
+  clientUrls: (process.env.CLIENT_URL || 'http://localhost:5173')
+    .split(',')
+    .map((u) => u.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
 

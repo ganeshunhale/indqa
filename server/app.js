@@ -28,12 +28,12 @@ const app = express();
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
-  cors: { origin: config.clientUrl, methods: ['GET', 'POST'], credentials: true },
+  cors: { origin: config.clientUrls, methods: ['GET', 'POST'], credentials: true },
 });
 
 // Security + parsing middleware
 app.use(helmet());
-app.use(cors({ origin: config.clientUrl, credentials: true }));
+app.use(cors({ origin: config.clientUrls, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
 // Rate limiting on the API surface

@@ -1,6 +1,8 @@
-# IndQA — NLP-Powered Question-Answering System for Indian Language Users
+# IndQA — Multilingual Retrieval-Augmented Question-Answering System for Indian Languages
 
-A full-stack **MERN** application that answers questions in **9 major Indian languages** using Google Translate, Google Gemini, MongoDB Atlas Vector Search, and a **Retrieval-Augmented Generation (RAG)** pipeline with real-time streaming.
+> **Academic project title:** *A Multilingual Retrieval-Augmented Question-Answering System for Indian Language Users Using the MERN Stack and Large Language Models*
+
+A full-stack **MERN** application that answers questions in **9 major Indian languages** by combining a **Large Language Model** (Google Gemini) with **semantic vector search** in a **Retrieval-Augmented Generation (RAG)** pipeline — delivering source-grounded, real-time-streamed answers over multi-tenant workspaces.
 
 **100% free to run** — no paid APIs required.
 

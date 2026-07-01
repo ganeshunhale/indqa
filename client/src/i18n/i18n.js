@@ -75,6 +75,7 @@ const resources = {
       modeStrict: 'Strict',
       modeHybridDesc: 'General AI assistant — answers anything, and uses your knowledge base as reference when relevant.',
       modeStrictDesc: 'Knowledge base only — answers strictly from your documents and refuses topics they do not cover.',
+      modeSwitched: 'Search mode changed to {{mode}}',
       // Auth
       createAccount: 'Create Account',
       signIn: 'Sign In',

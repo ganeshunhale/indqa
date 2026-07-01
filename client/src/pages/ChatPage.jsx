@@ -177,6 +177,22 @@ export default function ChatPage() {
     socketRef.current?.emit('ask-question', { question: text, language, conversationId: conv._id, mode: chatMode });
   };
 
+  // Switch the per-session answer mode and drop an inline notice into the chat so
+  // the change is visible in the conversation. Session-only: not emitted or persisted.
+  const changeMode = (mode) => {
+    if (mode === chatMode) return;
+    setChatMode(mode);
+    setMessages((prev) => [
+      ...prev,
+      {
+        _id: `mode-${Date.now()}`,
+        role: 'system',
+        originalText: t('modeSwitched', { mode: t(mode === 'hybrid' ? 'modeHybrid' : 'modeStrict') }),
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -278,7 +294,7 @@ export default function ChatPage() {
             <button
               type="button"
               className={`mode-btn ${chatMode === 'hybrid' ? 'active' : ''}`}
-              onClick={() => setChatMode('hybrid')}
+              onClick={() => changeMode('hybrid')}
               title={t('modeHybridDesc')}
               aria-pressed={chatMode === 'hybrid'}
             >
@@ -287,7 +303,7 @@ export default function ChatPage() {
             <button
               type="button"
               className={`mode-btn ${chatMode === 'strict' ? 'active' : ''}`}
-              onClick={() => setChatMode('strict')}
+              onClick={() => changeMode('strict')}
               title={t('modeStrictDesc')}
               aria-pressed={chatMode === 'strict'}
             >
@@ -306,7 +322,7 @@ export default function ChatPage() {
 
         {/* Messages */}
         <div className="messages-container" role="log" aria-live="polite" aria-relevant="additions">
-          {messages.length === 0 && !isProcessing && (
+          {!messages.some((m) => m.role === 'user' || m.role === 'assistant') && !isProcessing && (
             <div className="welcome-screen">
               <Sparkles size={48} className="welcome-icon" />
               <h2>{t('welcome')}</h2>
@@ -401,6 +417,14 @@ const MessageBubble = memo(function MessageBubble({ message }) {
   const { t, i18n } = useTranslation();
   const [showSources, setShowSources] = useState(false);
   const isUser = message.role === 'user';
+
+  if (message.role === 'system') {
+    return (
+      <div className="mode-notice" role="status">
+        <Sparkles size={12} /> {message.originalText}
+      </div>
+    );
+  }
 
   return (
     <div className={`message-row ${isUser ? 'user' : 'assistant'}`}>
